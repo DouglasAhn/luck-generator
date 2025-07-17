@@ -1,0 +1,626 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>로또 번호 생성 대쉬보드</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <style>
+    .container {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 1rem;
+      background: white;
+      border-radius: 0.5rem;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    .input-section, .result-section, .history-section {
+      padding: 1.5rem;
+    }
+    .history-section {
+      min-height: 200px;
+    }
+    #historyListContainer {
+      max-height: 200px;
+      overflow-y: auto;
+      margin-top: 1rem;
+    }
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div class="container">
+    <div class="input-section">
+      <h1 class="text-2xl font-bold mb-4 text-center">로또 번호 생성기</h1>
+      <div class="mb-4">
+        <label for="inputNumbers" class="block text-sm font-medium text-gray-700">기존 당첨 번호 입력 (쉼표, 띄어쓰기, 탭으로 구분, 1-45, 비어 있으면 1~45 사용):</label>
+        <input type="text" id="inputNumbers" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" placeholder="예: 1,3,4 5 6\t7,8,9,11,...">
+      </div>
+      <div class="mb-4 grid grid-cols-3 gap-2">
+        <div>
+          <label for="count2Input" class="block text-sm font-medium text-gray-700">2의 배수 개수:</label>
+          <input type="number" id="count2Input" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" min="0" max="6" placeholder="0-6" value="3" oninput="validateMultipleInput(this, 'count2Error')">
+          <p id="count2Error" class="text-red-500 text-xs mt-1 hidden">2의 배수 개수는 0에서 6 사이로 입력해주세요.</p>
+        </div>
+        <div>
+          <label for="count3Input" class="block text-sm font-medium text-gray-700">3의 배수 개수:</label>
+          <input type="number" id="count3Input" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" min="0" max="6" placeholder="0-6" oninput="validateMultipleInput(this, 'count3Error')">
+          <p id="count3Error" class="text-red-500 text-xs mt-1 hidden">3의 배수 개수는 0에서 6 사이로 입력해주세요.</p>
+        </div>
+        <div>
+          <label for="count5Input" class="block text-sm font-medium text-gray-700">5의 배수 개수:</label>
+          <input type="number" id="count5Input" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" min="0" max="6" placeholder="0-6" oninput="validateMultipleInput(this, 'count5Error')">
+          <p id="count5Error" class="text-red-500 text-xs mt-1 hidden">5의 배수 개수는 0에서 6 사이로 입력해주세요.</p>
+        </div>
+      </div>
+      <div class="mb-4 grid grid-cols-2 gap-2">
+        <div>
+          <label for="minSumInput" class="block text-sm font-medium text-gray-700">합계 최소값:</label>
+          <input type="number" id="minSumInput" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" min="21" max="261" placeholder="21-261" value="120">
+        </div>
+        <div>
+          <label for="maxSumInput" class="block text-sm font-medium text-gray-700">합계 최대값:</label>
+          <input type="number" id="maxSumInput" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm p-2" min="21" max="261" placeholder="21-261" value="160">
+        </div>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700">추가 통계 옵션:</label>
+        <div class="flex items-center mt-1">
+          <input type="checkbox" id="useFrequency" class="mr-2" disabled>
+          <label for="useFrequency" class="text-sm">빈도 가중치 사용</label>
+        </div>
+        <div class="slider-container mt-1">
+          <label for="frequencyWeight" class="text-sm mr-2">가중치 정도:</label>
+          <input type="range" id="frequencyWeight" class="w-full" min="0" max="1" step="0.01" value="0.5" disabled>
+          <span id="frequencyWeightValue" class="text-sm">0.5</span>
+        </div>
+        <div class="flex items-center mt-1">
+          <input type="checkbox" id="balanceRanges" class="mr-2">
+          <label for="balanceRanges" class="text-sm">구간 균형 (저/중/고 최소 1개)</label>
+        </div>
+        <div class="flex items-center mt-1">
+          <input type="checkbox" id="restrictConsecutive" class="mr-2">
+          <label for="restrictConsecutive" class="text-sm">연속 번호 2개 이하</label>
+        </div>
+      </div>
+      <button id="generateButton" class="w-full bg-blue-500 text-white py-2 rounded hover:bg-blue-600 mb-4">번호 생성</button>
+    </div>
+    <div class="result-section">
+      <div id="result" class="text-center mb-6">
+        <p id="error" class="text-red-500 text-sm mb-2 hidden"></p>
+        <p class="text-lg font-semibold">최근 생성된 번호:</p>
+        <p id="numbers" class="text-xl font-bold">--</p>
+        <p class="text-sm mt-2">합계: <span id="sum">--</span></p>
+        <p class="text-sm">2의 배수: <span id="count2">--</span></p>
+        <p class="text-sm">3의 배수: <span id="count3">--</span></p>
+        <p class="text-sm">5의 배수: <span id="count5">--</span></p>
+      </div>
+      <div class="mb-6">
+        <p class="text-lg font-semibold text-center">번호 구간 분포</p>
+        <canvas id="rangeChart" class="mt-2"></canvas>
+      </div>
+    </div>
+    <div class="history-section">
+      <div class="flex justify-between items-center mb-2">
+        <p class="text-lg font-semibold text-center">생성 기록:</p>
+        <button id="clearHistoryButton" class="bg-red-500 text-white py-1 px-3 rounded hover:bg-red-600">기록 초기화</button>
+      </div>
+      <div id="historyListContainer">
+        <ul id="historyList" class="text-sm space-y-2"></ul>
+      </div>
+    </div>
+  </div>
+
+  <script defer>
+    let history = [];
+    let rangeChart = null;
+
+    function validateMultipleInput(input, errorId) {
+      const errorElement = document.getElementById(errorId);
+      const value = input.value;
+      if (value !== '' && (parseInt(value) < 0 || parseInt(value) > 6)) {
+        errorElement.classList.remove('hidden');
+        input.value = '';
+      } else {
+        errorElement.classList.add('hidden');
+      }
+    }
+
+    function isValidInputNumbers(input) {
+      try {
+        const numbers = input.split(/[\s,]+/).map(num => parseInt(num.trim())).filter(num => !isNaN(num));
+        const uniqueNumbers = [...new Set(numbers)];
+        return uniqueNumbers.length > 0 && uniqueNumbers.every(num => num >= 1 && num <= 45);
+      } catch {
+        return false;
+      }
+    }
+
+    function parseInputNumbers(input) {
+      const numbers = input.split(/[\s,]+/).map(num => parseInt(num.trim())).filter(num => !isNaN(num));
+      const uniqueNumbers = [...new Set(numbers)];
+      if (uniqueNumbers.some(num => num < 1 || num > 45)) {
+        throw new Error("1부터 45까지의 숫자만 입력해주세요.");
+      }
+      return uniqueNumbers;
+    }
+
+    function parseMultiplesInput(count2Input, count3Input, count5Input) {
+      const count2 = count2Input === '' ? null : parseInt(count2Input);
+      const count3 = count3Input === '' ? null : parseInt(count3Input);
+      const count5 = count5Input === '' ? null : parseInt(count5Input);
+      if ((count2 !== null && (count2 < 0 || count2 > 6)) || 
+          (count3 !== null && (count3 < 0 || count3 > 6)) || 
+          (count5 !== null && (count5 < 0 || count5 > 6))) {
+        throw new Error("2/3/5 배수 개수는 0에서 6 사이로 입력해주세요.");
+      }
+      return { count2, count3, count5 };
+    }
+
+    function parseSumRange(minSumInput, maxSumInput) {
+      const minSum = minSumInput ? parseInt(minSumInput) : 21;
+      const maxSum = maxSumInput ? parseInt(maxSumInput) : 261;
+      if (minSum < 21 || minSum > 261 || maxSum < 21 || maxSum > 261) {
+        throw new Error("합계 범위는 21에서 261 사이로 입력해주세요.");
+      }
+      if (minSum > maxSum) {
+        throw new Error("최소 합계는 최대 합계보다 작거나 같아야 합니다.");
+      }
+      return { minSum, maxSum };
+    }
+
+    function getFrequencyWeights(existingNumbers, weightFactor, useFrequency) {
+      const allNumbers = Array.from({ length: 45 }, (_, i) => i + 1);
+      const weights = {};
+      allNumbers.forEach(num => {
+        if (useFrequency && existingNumbers.includes(num)) {
+          weights[num] = 1 + weightFactor * (Math.random() * 10);
+        } else {
+          weights[num] = 1;
+        }
+      });
+      const total = Object.values(weights).reduce((sum, w) => sum + w, 0);
+      return allNumbers.map(num => ({ number: num, weight: weights[num] / total }));
+    }
+
+    function selectWeightedNumber(weightedNumbers) {
+      const totalWeight = weightedNumbers.reduce((sum, item) => sum + item.weight, 0);
+      let random = Math.random() * totalWeight;
+      for (const item of weightedNumbers) {
+        random -= item.weight;
+        if (random <= 0) return item.number;
+      }
+      return weightedNumbers[weightedNumbers.length - 1].number;
+    }
+
+    function generateLottoNumbers(targetCounts, useFrequency, balanceRanges, weightFactor, existingNumbers) {
+      const allNumbers = Array.from({ length: 45 }, (_, i) => i + 1);
+      const { count2: targetCount2, count3: targetCount3, count5: targetCount5 } = targetCounts;
+      
+      const multiples2 = allNumbers.filter(num => num % 2 === 0);
+      const multiples3 = allNumbers.filter(num => num % 3 === 0);
+      const multiples5 = allNumbers.filter(num => num % 5 === 0);
+
+      // 배수 조건 사전 검증
+      if ((targetCount2 !== null && multiples2.length < targetCount2) || 
+          (targetCount3 !== null && multiples3.length < targetCount3) || 
+          (targetCount5 !== null && multiples5.length < targetCount5)) {
+        throw new Error("요청된 배수 개수를 만족할 수 없습니다.");
+      }
+
+      const numbers = [];
+      const usedNumbers = new Set();
+      let weightedNumbers = getFrequencyWeights(existingNumbers, weightFactor, useFrequency);
+
+      const lowRange = allNumbers.filter(num => num <= 15);
+      const midRange = allNumbers.filter(num => num > 15 && num <= 30);
+      const highRange = allNumbers.filter(num => num > 30);
+
+      if (balanceRanges && (lowRange.length < 1 || midRange.length < 1 || highRange.length < 1)) {
+        throw new Error("구간 균형 옵션을 위해 저/중/고 구간에 최소 1개의 번호가 필요합니다.");
+      }
+
+      // 구간 균형 조건 처리
+      if (balanceRanges) {
+        const lowWeights = weightedNumbers.filter(item => item.number <= 15);
+        const midWeights = weightedNumbers.filter(item => item.number > 15 && item.number <= 30);
+        const highWeights = weightedNumbers.filter(item => item.number > 30);
+
+        if (lowWeights.length > 0) {
+          const num = selectWeightedNumber(lowWeights);
+          numbers.push(num);
+          usedNumbers.add(num);
+          weightedNumbers = weightedNumbers.filter(item => !usedNumbers.has(item.number));
+        }
+        if (midWeights.length > 0) {
+          const num = selectWeightedNumber(midWeights);
+          numbers.push(num);
+          usedNumbers.add(num);
+          weightedNumbers = weightedNumbers.filter(item => !usedNumbers.has(item.number));
+        }
+        if (highWeights.length > 0) {
+          const num = selectWeightedNumber(highWeights);
+          numbers.push(num);
+          usedNumbers.add(num);
+          weightedNumbers = weightedNumbers.filter(item => !usedNumbers.has(item.number));
+        }
+      }
+
+      // 배수 조건 처리 (2의 배수)
+      if (targetCount2 !== null) {
+        let count2 = numbers.filter(num => num % 2 === 0).length;
+        let availableMultiples2 = multiples2.filter(num => !usedNumbers.has(num));
+        let weightedMultiples2 = weightedNumbers.filter(item => item.number % 2 === 0 && !usedNumbers.has(item.number));
+        while (count2 < targetCount2 && availableMultiples2.length > 0 && numbers.length < 6) {
+          if (weightedMultiples2.length === 0) break; // 더 이상 선택 가능한 2의 배수 없음
+          const number = selectWeightedNumber(weightedMultiples2);
+          if (!usedNumbers.has(number)) {
+            numbers.push(number);
+            usedNumbers.add(number);
+            count2++;
+            weightedNumbers = weightedNumbers.filter(item => !usedNumbers.has(item.number));
+            availableMultiples2 = availableMultiples2.filter(num => num !== number);
+            weightedMultiples2 = weightedNumbers.filter(item => item.number % 2 === 0 && !usedNumbers.has(item.number));
+          }
+        }
+        if (count2 < targetCount2) {
+          throw new Error("2의 배수 개수 조건을 만족할 수 없습니다.");
+        }
+      }
+
+      // 배수 조건 처리 (3의 배수)
+      if (targetCount3 !== null) {
+        let count3 = numbers.filter(num => num % 3 === 0).length;
+        let availableMultiples3 = multiples3.filter(num => !usedNumbers.has(num));
+        let weightedMultiples3 = weightedNumbers.filter(item => item.number % 3 === 0 && !usedNumbers.has(item.number));
+        while (count3 < targetCount3 && availableMultiples3.length > 0 && numbers.length < 6) {
+          if (weightedMultiples3.length === 0) break;
+          const number = selectWeightedNumber(weightedMultiples3);
+          if (!usedNumbers.has(number)) {
+            numbers.push(number);
+            usedNumbers.add(number);
+            count3++;
+            weightedNumbers = weightedNumbers.filter(item => !usedNumbers.has(item.number));
+            availableMultiples3 = availableMultiples3.filter(num => num !== number);
+            weightedMultiples3 = weightedNumbers.filter(item => item.number % 3 === 0 && !usedNumbers.has(item.number));
+          }
+        }
+        if (count3 < targetCount3) {
+          throw new Error("3의 배수 개수 조건을 만족할 수 없습니다.");
+        }
+      }
+
+      // 배수 조건 처리 (5의 배수)
+      if (targetCount5 !== null) {
+        let count5 = numbers.filter(num => num % 5 === 0).length;
+        let availableMultiples5 = multiples5.filter(num => !usedNumbers.has(num));
+        let weightedMultiples5 = weightedNumbers.filter(item => item.number % 5 === 0 && !usedNumbers.has(item.number));
+        while (count5 < targetCount5 && availableMultiples5.length > 0 && numbers.length < 6) {
+          if (weightedMultiples5.length === 0) break;
+          const number = selectWeightedNumber(weightedMultiples5);
+          if (!usedNumbers.has(number)) {
+            numbers.push(number);
+            usedNumbers.add(number);
+            count5++;
+            weightedNumbers = weightedNumbers.filter(item => !usedNumbers.has(item.number));
+            availableMultiples5 = availableMultiples5.filter(num => num !== number);
+            weightedMultiples5 = weightedNumbers.filter(item => item.number % 5 === 0 && !usedNumbers.has(item.number));
+          }
+        }
+        if (count5 < targetCount5) {
+          throw new Error("5의 배수 개수 조건을 만족할 수 없습니다.");
+        }
+      }
+
+      // 나머지 번호 채우기
+      let remainingNumbers = allNumbers.filter(num => !usedNumbers.has(num));
+      let weightedRemaining = weightedNumbers.filter(item => !usedNumbers.has(item.number));
+      while (numbers.length < 6 && remainingNumbers.length > 0) {
+        if (weightedRemaining.length === 0) break;
+        const number = selectWeightedNumber(weightedRemaining);
+        numbers.push(number);
+        usedNumbers.add(number);
+        remainingNumbers = remainingNumbers.filter(num => num !== number);
+        weightedRemaining = weightedNumbers.filter(item => !usedNumbers.has(item.number));
+      }
+
+      if (numbers.length !== 6) {
+        throw new Error("6개의 번호를 생성할 수 없습니다. 조건을 확인해주세요.");
+      }
+
+      return numbers.sort((a, b) => a - b);
+    }
+
+    function calculateSum(numbers) {
+      return numbers.reduce((sum, num) => sum + num, 0);
+    }
+
+    function countMultiples(numbers) {
+      const count2 = numbers.filter(num => num % 2 === 0).length;
+      const count3 = numbers.filter(num => num % 3 === 0).length;
+      const count5 = numbers.filter(num => num % 5 === 0).length;
+      return { count2, count3, count5 };
+    }
+
+    function hasValidGaps(numbers) {
+      const gaps = [];
+      for (let i = 1; i < numbers.length; i++) {
+        gaps.push(numbers[i] - numbers[i - 1]);
+      }
+      const gapCounts = {};
+      gaps.forEach(gap => {
+        gapCounts[gap] = (gapCounts[gap] || 0) + 1;
+      });
+      return Object.values(gapCounts).every(count => count < 3);
+    }
+
+    function hasValidConsecutive(numbers) {
+      let consecutiveCount = 1;
+      for (let i = 1; i < numbers.length; i++) {
+        if (numbers[i] - numbers[i - 1] === 1) {
+          consecutiveCount++;
+          if (consecutiveCount > 2) return false;
+        } else {
+          consecutiveCount = 1;
+        }
+      }
+      return true;
+    }
+
+    function isValidCombination(numbers, targetCounts, sumRange) {
+      const sum = calculateSum(numbers);
+      const { count2, count3, count5 } = countMultiples(numbers);
+      const balanceRanges = document.getElementById('balanceRanges').checked;
+      const restrictConsecutive = document.getElementById('restrictConsecutive').checked;
+      
+      // 구간 균형 검사
+      const lowCount = numbers.filter(num => num <= 15).length;
+      const midCount = numbers.filter(num => num > 15 && num <= 30).length;
+      const highCount = numbers.filter(num => num > 30).length;
+
+      return (
+        sum >= sumRange.minSum &&
+        sum <= sumRange.maxSum &&
+        hasValidGaps(numbers) &&
+        (!restrictConsecutive || hasValidConsecutive(numbers)) &&
+        (targetCounts.count2 === null || count2 === targetCounts.count2) &&
+        (targetCounts.count3 === null || count3 === targetCounts.count3) &&
+        (targetCounts.count5 === null || count5 === targetCounts.count5) &&
+        (!balanceRanges || (lowCount >= 1 && midCount >= 1 && highCount >= 1))
+      );
+    }
+
+    function generateValidLottoNumbers(targetCounts, sumRange, weightFactor, existingNumbers) {
+      let numbers;
+      let attempts = 0;
+      const maxAttempts = 10000;
+      do {
+        numbers = generateLottoNumbers(targetCounts, document.getElementById('useFrequency').checked, document.getElementById('balanceRanges').checked, weightFactor, existingNumbers);
+        attempts++;
+        if (attempts > maxAttempts) {
+          throw new Error("유효한 번호를 생성할 수 없습니다. 배수 조건, 합계 범위, 구간 균형, 연속 번호 제한 조건을 확인해주세요.");
+        }
+      } while (!isValidCombination(numbers, targetCounts, sumRange));
+      return numbers;
+    }
+
+    function updateChart(numbers) {
+      const canvas = document.getElementById('rangeChart');
+      if (!canvas) {
+        console.error('Canvas element not found');
+        return;
+      }
+      const lowCount = numbers.filter(num => num <= 15).length;
+      const midCount = numbers.filter(num => num > 15 && num <= 30).length;
+      const highCount = numbers.filter(num => num > 30).length;
+
+      if (rangeChart) rangeChart.destroy();
+      try {
+        rangeChart = new Chart(canvas, {
+          type: 'bar',
+          data: {
+            labels: ['저(1-15)', '중(16-30)', '고(31-45)'],
+            datasets: [{
+              label: '번호 분포',
+              data: [lowCount, midCount, highCount],
+              backgroundColor: ['#3B82F6', '#10B981', '#EF4444'],
+              borderColor: ['#1E3A8A', '#065F46', '#991B1B'],
+              borderWidth: 1
+            }]
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                max: 6,
+                ticks: { stepSize: 1 }
+              }
+            },
+            plugins: {
+              legend: { display: false }
+            }
+          }
+        });
+      } catch (error) {
+        console.error('Chart initialization failed:', error);
+      }
+    }
+
+    function updateHistory(numbers, sum, count2, count3, count5) {
+      history.unshift({ numbers, sum, count2, count3, count5 });
+      const historyList = document.getElementById('historyList');
+      if (!historyList) {
+        console.error('History list element not found');
+        return;
+      }
+      const listItem = document.createElement('li');
+      listItem.className = 'bg-gray-50 p-2 rounded';
+      listItem.textContent = `번호: ${numbers.join(', ')} | 합계: ${sum} | 2의 배수: ${count2} | 3의 배수: ${count3} | 5의 배수: ${count5}`;
+      historyList.prepend(listItem);
+    }
+
+    function clearHistory() {
+      history = [];
+      const historyList = document.getElementById('historyList');
+      if (!historyList) {
+        console.error('History list element not found');
+        return;
+      }
+      historyList.innerHTML = '';
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const generateButton = document.getElementById('generateButton');
+      const clearHistoryButton = document.getElementById('clearHistoryButton');
+      const inputNumbers = document.getElementById('inputNumbers');
+      const useFrequencyCheckbox = document.getElementById('useFrequency');
+      const frequencyWeightSlider = document.getElementById('frequencyWeight');
+      const frequencyWeightValue = document.getElementById('frequencyWeightValue');
+
+      if (!generateButton) {
+        console.error('Generate button not found');
+        return;
+      }
+      if (!clearHistoryButton) {
+        console.error('Clear history button not found');
+        return;
+      }
+      if (!inputNumbers || !useFrequencyCheckbox || !frequencyWeightSlider || !frequencyWeightValue) {
+        console.error('Input numbers, frequency checkbox, slider, or value element not found');
+        return;
+      }
+
+      // 초기 상태: 입력이 없거나 유효하지 않으면 빈도 가중치 체크박스와 슬라이더 비활성화
+      const isValidInput = isValidInputNumbers(inputNumbers.value);
+      useFrequencyCheckbox.disabled = !isValidInput;
+      useFrequencyCheckbox.checked = false;
+      frequencyWeightSlider.disabled = !isValidInput || !useFrequencyCheckbox.checked;
+      frequencyWeightValue.textContent = frequencyWeightSlider.value;
+
+      // 입력란 변화 감지 (change 이벤트 사용)
+      inputNumbers.addEventListener('change', () => {
+        const isValidInput = isValidInputNumbers(inputNumbers.value);
+        useFrequencyCheckbox.disabled = !isValidInput;
+        useFrequencyCheckbox.checked = false;
+        frequencyWeightSlider.disabled = !isValidInput || !useFrequencyCheckbox.checked;
+      });
+
+      // 빈도 가중치 체크박스 변화 감지
+      useFrequencyCheckbox.addEventListener('change', () => {
+        frequencyWeightSlider.disabled = !useFrequencyCheckbox.checked || !isValidInputNumbers(inputNumbers.value);
+      });
+
+      // 슬라이더 값 변화 감지
+      frequencyWeightSlider.addEventListener('input', () => {
+        frequencyWeightValue.textContent = frequencyWeightSlider.value;
+      });
+
+      generateButton.addEventListener('click', () => {
+        const errorElement = document.getElementById('error');
+        const numbersElement = document.getElementById('numbers');
+        const sumElement = document.getElementById('sum');
+        const count2Element = document.getElementById('count2');
+        const count3Element = document.getElementById('count3');
+        const count5Element = document.getElementById('count5');
+
+        if (!errorElement || !numbersElement || !sumElement || !count2Element || !count3Element || !count5Element) {
+          console.error('One or more result elements not found');
+          return;
+        }
+
+        errorElement.classList.add('hidden');
+        numbersElement.textContent = '--';
+        sumElement.textContent = '--';
+        count2Element.textContent = '--';
+        count3Element.textContent = '--';
+        count5Element.textContent = '--';
+
+        try {
+          const input = document.getElementById('inputNumbers').value;
+          const count2Input = document.getElementById('count2Input').value;
+          const count3Input = document.getElementById('count3Input').value;
+          const count5Input = document.getElementById('count5Input').value;
+          const minSumInput = document.getElementById('minSumInput').value;
+          const maxSumInput = document.getElementById('maxSumInput').value;
+          const weightFactor = parseFloat(document.getElementById('frequencyWeight').value);
+
+          const existingNumbers = isValidInputNumbers(input) ? parseInputNumbers(input) : [];
+          const targetCounts = parseMultiplesInput(count2Input, count3Input, count5Input);
+          const sumRange = parseSumRange(minSumInput, maxSumInput);
+          const numbers = generateValidLottoNumbers(targetCounts, sumRange, weightFactor, existingNumbers);
+          const sum = calculateSum(numbers);
+          const { count2, count3, count5 } = countMultiples(numbers);
+
+          numbersElement.textContent = numbers.join(', ');
+          sumElement.textContent = sum;
+          count2Element.textContent = count2;
+          count3Element.textContent = count3;
+          count5Element.textContent = count5;
+
+          updateHistory(numbers, sum, count2, count3, count5);
+          updateChart(numbers);
+        } catch (error) {
+          errorElement.textContent = error.message;
+          errorElement.classList.remove('hidden');
+          console.error('Error generating numbers:', error);
+        }
+      });
+
+      clearHistoryButton.addEventListener('click', () => {
+        try {
+          clearHistory();
+        } catch (error) {
+          console.error('Error clearing history:', error);
+        }
+      });
+    });
+  </script>
+</body>
+</html>
