@@ -441,7 +441,7 @@
     function generateValidLottoNumbers(targetCounts, sumRange, weightFactor, existingNumbers) {
       let numbers;
       let attempts = 0;
-      const maxAttempts = 20000;
+      const maxAttempts = 500000;
       do {
         numbers = generateLottoNumbers(targetCounts, document.getElementById('useFrequency').checked, document.getElementById('balanceRanges').checked, weightFactor, existingNumbers);
         attempts++;
